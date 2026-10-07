@@ -1,0 +1,320 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis]
+}
+
+enum Role {
+  ADMIN
+  DISPATCHER
+  AMBULANCE_DRIVER
+  PARAMEDIC
+  HOSPITAL
+}
+
+model Hospital {
+  id                     String                   @id @default(uuid())
+  name                   String
+  latitude               Float
+  longitude              Float
+  address                String?
+  contactNumber          String
+  totalBeds              Int
+  availableICUBeds       Int
+  availableEmergencyBeds Int
+  availableVentilators   Int
+  traumaCenterLevel      Int
+  acceptingPatients      Boolean                  @default(true)
+  specialties            String[]
+  lastCapacityUpdate     DateTime                 @default(now())
+  geom                   Unsupported("geometry")? @default(dbgenerated("st_setsrid(st_makepoint(longitude, latitude), 4326)"))
+  incidents              EmergencyIncident[]
+  reservations           BedReservation[]
+  users                  User[]
+
+  @@index([acceptingPatients], map: "idx_hospitals_accepting")
+  @@index([geom], map: "idx_hospitals_geom", type: Gist)
+  @@map("hospitals")
+}
+
+model Ambulance {
+  id                    String                   @id @default(uuid())
+  vehicleNumber         String                   @unique
+  driverName            String
+  driverPhone           String
+  status                AmbulanceStatus          @default(AVAILABLE)
+  latitude              Float?
+  longitude             Float?
+  currentIncidentId     String?
+  destinationHospitalId String?
+  etaSeconds            Int?
+  lastUpdated           DateTime                 @default(now())
+  geom                  Unsupported("geometry")? @default(dbgenerated("\nCASE\n    WHEN ((longitude IS NOT NULL) AND (latitude IS NOT NULL)) THEN st_setsrid(st_makepoint(longitude, latitude), 4326)\n    ELSE NULL::geometry\nEND"))
+  incidents             EmergencyIncident[]
+  user                  User?
+  etaPredictions        MLETAPrediction[]
+
+  @@index([geom], map: "idx_ambulances_geom", type: Gist)
+  @@index([status], map: "idx_ambulances_status")
+  @@map("ambulances")
+}
+
+model EmergencyIncident {
+  id                    String                   @id @default(uuid())
+  emergencyType         String
+  priority              IncidentPriority         @default(MEDIUM)
+  status                IncidentStatus           @default(REPORTED)
+  latitude              Float
+  longitude             Float
+  address               String?
+  description           String
+  reporterContact       String?
+  assignedAmbulanceId   String?
+  assignedParamedicId   String?
+  destinationHospitalId String?
+  idempotencyKey        String?                  @unique
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @default(now())
+  geom                  Unsupported("geometry")? @default(dbgenerated("st_setsrid(st_makepoint(longitude, latitude), 4326)"))
+  assignedAmbulance     Ambulance?               @relation(fields: [assignedAmbulanceId], references: [id], onUpdate: NoAction)
+  destinationHospital   Hospital?                @relation(fields: [destinationHospitalId], references: [id], onUpdate: NoAction)
+  paramedicReports      ParamedicReport[]
+  patients              Patient[]
+  reservations          BedReservation[]
+  mlTriagePrediction    MLTriagePrediction?
+  mlETAPrediction       MLETAPrediction?
+
+  @@index([geom], map: "idx_incidents_geom", type: Gist)
+  @@index([status], map: "idx_incidents_status")
+  @@map("incidents")
+}
+
+model Paramedic {
+  id         String            @id @default(uuid())
+  name       String
+  phone      String
+  unitNumber String
+  createdAt  DateTime          @default(now())
+  reports    ParamedicReport[]
+  user       User?
+
+  @@map("paramedics")
+}
+
+model ParamedicReport {
+  id                      String            @id @default(uuid())
+  incidentId              String
+  paramedicId             String
+  patientConditionSummary String
+  triageLevel             TriageLevel
+  heartRate               Int?
+  bloodPressureSystolic   Int?
+  bloodPressureDiastolic  Int?
+  oxygenSaturation        Float?
+  respiratoryRate         Int?
+  temperatureCelsius      Float?
+  glasgowComaScale        Int?
+  voiceReportAudioUrl     String?
+  transcriptionText       String?
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @default(now())
+  incident                EmergencyIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  paramedic               Paramedic         @relation(fields: [paramedicId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@map("paramedic_reports")
+}
+
+model Patient {
+  id                     String            @id @default(uuid())
+  incidentId             String
+  name                   String?
+  age                    Int?
+  gender                 String?
+  knownMedicalConditions String[]
+  allergies              String[]
+  bloodType              String?
+  createdAt              DateTime          @default(now())
+  incident               EmergencyIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@map("patients")
+}
+
+model MLTriagePrediction {
+  id                     String            @id @default(uuid())
+  incidentId             String            @unique
+  modelVersion           String
+  severityRecommendation String
+  confidence             Float
+  safetyEscalation       Boolean
+  topFactors             String[]
+  createdAt              DateTime          @default(now())
+  incident               EmergencyIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  
+  @@map("ml_triage_predictions")
+}
+
+model MLETAPrediction {
+  id                    String            @id @default(uuid())
+  incidentId            String            @unique
+  ambulanceId           String
+  predictedEtaMinutes   Float
+  lowerBound            Float
+  upperBound            Float
+  modelVersion          String
+  createdAt             DateTime          @default(now())
+  incident              EmergencyIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  ambulance             Ambulance         @relation(fields: [ambulanceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  
+  @@map("ml_eta_predictions")
+}
+
+model BedReservation {
+  id          String            @id @default(uuid())
+  incidentId  String
+  hospitalId  String
+  bedType     String
+  status      ReservationStatus @default(PENDING)
+  requestedAt DateTime          @default(now())
+  confirmedAt DateTime?
+  expiresAt   DateTime
+  hospital    Hospital          @relation(fields: [hospitalId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  incident    EmergencyIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@map("reservations")
+}
+
+model SystemErrorRecord {
+  id          String            @id @default(uuid())
+  timestamp   DateTime          @default(now())
+  severity    ErrorSeverity
+  source      SystemErrorSource
+  service     String
+  operation   String
+  errorCode   String?
+  message     String
+  stack       String?
+  details     Json?
+  incidentId  String?
+  ambulanceId String?
+  hospitalId  String?
+  resolved    Boolean           @default(false)
+  resolvedAt  DateTime?
+
+  @@index([severity], map: "idx_system_errors_severity")
+  @@index([source], map: "idx_system_errors_source")
+  @@map("system_errors")
+}
+
+model AuditLogEntry {
+  id          String   @id @default(uuid())
+  timestamp   DateTime @default(now())
+  who         String
+  what        String
+  source      String
+  action      String
+  result      String
+  incidentId  String?
+  ambulanceId String?
+  hospitalId  String?
+  metadata    Json?
+
+  @@index([timestamp], map: "idx_audit_logs_timestamp")
+  @@map("audit_logs")
+}
+
+model spatial_ref_sys {
+  srid      Int     @id
+  auth_name String? @db.VarChar(256)
+  auth_srid Int?
+  srtext    String? @db.VarChar(2048)
+  proj4text String? @db.VarChar(2048)
+}
+
+enum IncidentPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum IncidentStatus {
+  REPORTED
+  DISPATCHED
+  PARAMEDIC_EN_ROUTE
+  PATIENT_PICKED_UP
+  TRANSPORTING
+  ARRIVED_AT_HOSPITAL
+  HANDOFF_COMPLETED
+  CANCELLED
+}
+
+enum AmbulanceStatus {
+  AVAILABLE
+  ASSIGNED
+  EN_ROUTE
+  OUT_OF_SERVICE
+  MAINTENANCE
+}
+
+enum TriageLevel {
+  IMMEDIATE_RED
+  URGENT_YELLOW
+  DELAYED_GREEN
+  EXPECTANT_BLACK
+}
+
+enum ReservationStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
+  EXPIRED
+  COMPLETED
+}
+
+enum ErrorSeverity {
+  INFO
+  WARNING
+  ERROR
+  CRITICAL
+}
+
+enum SystemErrorSource {
+  PUBLIC_SOS
+  AMBULANCE_DRIVER
+  PARAMEDIC_TEAM
+  HOSPITAL
+  DISPATCH_CENTER
+  ADMIN_COMMAND_CENTER
+  DATABASE
+  API_GATEWAY
+  WEBSOCKET
+  AI_SERVICE
+  ROUTING_SERVICE
+  SYSTEM_CORE
+}
+
+model User {
+  id           String    @id @default(uuid())
+  username     String    @unique
+  passwordHash String
+  role         Role
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @default(now())
+
+  ambulanceId  String?   @unique
+  ambulance    Ambulance? @relation(fields: [ambulanceId], references: [id])
+
+  paramedicId  String?   @unique
+  paramedic    Paramedic? @relation(fields: [paramedicId], references: [id])
+
+  hospitalId   String?
+  hospital     Hospital?  @relation(fields: [hospitalId], references: [id])
+
+  @@map("users")
+}

@@ -1,0 +1,26 @@
+{
+  "model_version": "eta-v1",
+  "algorithm": "RandomForestRegressor",
+  "dataset": "synthetic_eta_dataset",
+  "synthetic": true,
+  "metrics": {
+    "mae": 8.775289845453287,
+    "rmse": 16.16250993569926,
+    "r2": 0.9377942987909657,
+    "median_absolute_error": 4.836996603985542
+  },
+  "features": [
+    "distance_km",
+    "route_distance_km",
+    "time_of_day",
+    "day_of_week",
+    "traffic_factor",
+    "average_speed_kmh",
+    "road_complexity",
+    "weather_factor",
+    "ambulance_load_factor",
+    "pickup_delay_minutes"
+  ],
+  "random_seed": 42,
+  "trained_at": "2026-10-07T09:37:57.110426"
+}

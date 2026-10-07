@@ -1,0 +1,60 @@
+{
+  "model_version": "triage-v1",
+  "algorithm": "RandomForestClassifier",
+  "dataset": "synthetic_triage_dataset",
+  "synthetic": true,
+  "metrics": {
+    "accuracy": 0.6825,
+    "macro_precision": 0.6971968399010089,
+    "macro_recall": 0.7032314769938532,
+    "macro_f1": 0.6992076528227806,
+    "confusion_matrix": [
+      [
+        69,
+        8,
+        0,
+        0
+      ],
+      [
+        7,
+        72,
+        1,
+        25
+      ],
+      [
+        0,
+        3,
+        76,
+        22
+      ],
+      [
+        2,
+        34,
+        25,
+        56
+      ]
+    ],
+    "classes": [
+      "CRITICAL",
+      "HIGH",
+      "LOW",
+      "MODERATE"
+    ]
+  },
+  "features": [
+    "age",
+    "heart_rate",
+    "spo2",
+    "systolic_bp",
+    "respiratory_rate",
+    "temperature",
+    "gcs",
+    "bleeding",
+    "breathing_difficulty",
+    "chest_pain",
+    "injury_severity",
+    "incident_type"
+  ],
+  "random_seed": 42,
+  "trained_at": "2026-10-07T08:36:43.783079"
+}
